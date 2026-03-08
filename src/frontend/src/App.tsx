@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
-import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { Outlet, RouterProvider, createRouter } from "@tanstack/react-router";
 import { createRootRoute, createRoute } from "@tanstack/react-router";
 import { UserProvider } from "./context/UserContext";
 import AuthPage from "./pages/AuthPage";
@@ -8,7 +8,7 @@ import SheetPage from "./pages/SheetPage";
 
 // Root route
 const rootRoute = createRootRoute({
-  component: () => <></>,
+  component: () => <Outlet />,
 });
 
 const authRoute = createRoute({

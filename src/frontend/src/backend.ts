@@ -121,6 +121,7 @@ export enum UserRole {
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    checkPermission(): Promise<void>;
     createDocument(title: string): Promise<string>;
     deleteDocument(docId: string): Promise<void>;
     getCallerUserProfile(): Promise<UserProfile | null>;
@@ -130,7 +131,7 @@ export interface backendInterface {
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     heartbeat(docId: string, sessionId: string): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
-    joinDocument(docId: string, color: string): Promise<string>;
+    joinDocument(docId: string, color: string, userName: string): Promise<string>;
     leaveDocument(docId: string, sessionId: string): Promise<void>;
     listDocuments(): Promise<Array<Document>>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
@@ -164,6 +165,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async checkPermission(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.checkPermission();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.checkPermission();
             return result;
         }
     }
@@ -293,17 +308,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async joinDocument(arg0: string, arg1: string): Promise<string> {
+    async joinDocument(arg0: string, arg1: string, arg2: string): Promise<string> {
         if (this.processError) {
             try {
-                const result = await this.actor.joinDocument(arg0, arg1);
+                const result = await this.actor.joinDocument(arg0, arg1, arg2);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.joinDocument(arg0, arg1);
+            const result = await this.actor.joinDocument(arg0, arg1, arg2);
             return result;
         }
     }

@@ -4,6 +4,7 @@ import type { CellFormat } from "./FormattingToolbar";
 interface CellProps {
   row: number;
   col: number;
+  width: number;
   displayValue: string;
   isSelected: boolean;
   isEditing: boolean;
@@ -20,6 +21,7 @@ interface CellProps {
 export const Cell = memo(function Cell({
   row,
   col,
+  width,
   displayValue,
   isSelected,
   isEditing,
@@ -37,15 +39,24 @@ export const Cell = memo(function Cell({
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      // Position cursor at end
-      const len = inputRef.current.value.length;
-      inputRef.current.setSelectionRange(len, len);
+      // Use requestAnimationFrame to ensure the input is rendered and focusable
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Position cursor at end so the initial char is preserved
+          const len = inputRef.current.value.length;
+          inputRef.current.setSelectionRange(len, len);
+        }
+      });
     }
   }, [isEditing]);
 
+  const cellRef = useRef<HTMLTableCellElement>(null);
+
   const handleClick = useCallback(() => {
     onSelect(row, col);
+    // Ensure the <td> receives DOM focus so keyboard events fire immediately
+    cellRef.current?.focus();
   }, [row, col, onSelect]);
 
   const handleDoubleClick = useCallback(() => {
@@ -164,11 +175,12 @@ export const Cell = memo(function Cell({
 
   return (
     <td
+      ref={cellRef}
       className="relative p-0 overflow-hidden"
       style={{
-        width: "100px",
-        minWidth: "100px",
-        maxWidth: "100px",
+        width: `${width}px`,
+        minWidth: `${width}px`,
+        maxWidth: `${width}px`,
         height: "24px",
         background: isSelected
           ? "oklch(0.72 0.18 155 / 0.08)"

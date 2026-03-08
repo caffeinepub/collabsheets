@@ -186,3 +186,27 @@
   left: 0;
   z-index: 1;
 }
+
+/* Column resize handle hover */
+.col-resize-handle:hover .resize-handle-bar,
+.col-resize-handle:active .resize-handle-bar {
+  background: oklch(0.72 0.18 155) !important;
+}
+
+/* Prevent text selection during column resize */
+.spreadsheet-grid.resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+/* Formula bar fx icon style */
+.formula-bar-fx {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: oklch(0.65 0.15 155);
+  padding: 0 8px;
+  flex-shrink: 0;
+}

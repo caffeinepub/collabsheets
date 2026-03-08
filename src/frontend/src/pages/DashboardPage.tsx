@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,9 +28,9 @@ import { toast } from "sonner";
 import type { Document } from "../backend.d";
 import { getInitials, useUser } from "../context/UserContext";
 import { useActor } from "../hooks/useActor";
+import { getDocumentLastModifiedMs } from "../utils/docTimestamps";
 
-function formatDate(ts: bigint): string {
-  const ms = Number(ts) / 1_000_000;
+function formatDate(ms: number): string {
   const date = new Date(ms);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -61,7 +62,17 @@ export default function DashboardPage() {
     try {
       const docs = await actor.listDocuments();
       setDocuments(
-        docs.sort((a, b) => Number(b.lastModified - a.lastModified)),
+        docs.sort((a, b) => {
+          const aMs = getDocumentLastModifiedMs(
+            a.id,
+            Number(a.lastModified) / 1_000_000,
+          );
+          const bMs = getDocumentLastModifiedMs(
+            b.id,
+            Number(b.lastModified) / 1_000_000,
+          );
+          return bMs - aMs;
+        }),
       );
     } catch {
       // silent
@@ -216,6 +227,9 @@ export default function DashboardPage() {
             >
               <DialogHeader>
                 <DialogTitle>New Spreadsheet</DialogTitle>
+                <DialogDescription>
+                  Give your spreadsheet a title to get started.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 py-2">
                 <Label htmlFor="doc-title">Title</Label>
@@ -333,7 +347,14 @@ export default function DashboardPage() {
                         </span>
                         <div className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Clock className="w-3 h-3" />
-                          <span>{formatDate(doc.lastModified)}</span>
+                          <span>
+                            {formatDate(
+                              getDocumentLastModifiedMs(
+                                doc.id,
+                                Number(doc.lastModified) / 1_000_000,
+                              ),
+                            )}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -392,6 +413,9 @@ export default function DashboardPage() {
         >
           <DialogHeader>
             <DialogTitle>Delete Spreadsheet</DialogTitle>
+            <DialogDescription>
+              This action is permanent and cannot be undone.
+            </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground py-2">
             Are you sure you want to delete{" "}

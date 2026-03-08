@@ -20,10 +20,39 @@ import { useUser } from "../context/UserContext";
 import { useActor } from "../hooks/useActor";
 import { getRandomColor } from "../utils/colors";
 import { downloadCSV, generateCSV } from "../utils/csv";
+import { touchDocumentTimestamp } from "../utils/docTimestamps";
 import { getDisplayValue } from "../utils/formula";
 
 const ROWS = 100;
 const COLS = 26;
+
+// Auto-detect and normalize formula expressions typed without "=" or row numbers.
+// e.g. "a+b" on row 0 → "=A1+B1"
+// e.g. "a1+b2"         → "=A1+B2"
+function normalizeInput(rawValue: string, currentRow: number): string {
+  // Already a formula — just return as-is
+  if (rawValue.startsWith("=")) {
+    return rawValue;
+  }
+
+  // Only treat as a formula if it contains both letter references AND operators
+  const looksLikeFormula =
+    /[a-zA-Z]/.test(rawValue) && /[+\-*/]/.test(rawValue);
+
+  if (!looksLikeFormula) return rawValue;
+
+  // Expand bare column letters (no row digit) to col+currentRow+1
+  // e.g. "a" → "A1"  |  "a1" → "A1"  |  "b2" → "B2"
+  const normalized = rawValue.replace(
+    /([a-zA-Z]+)(\d*)/g,
+    (_match, letters: string, digits: string) => {
+      const upper = letters.toUpperCase();
+      return digits ? `${upper}${digits}` : `${upper}${currentRow + 1}`;
+    },
+  );
+
+  return `=${normalized}`;
+}
 
 export default function SheetPage() {
   const params = useParams({ from: "/sheet/$id" });
@@ -35,6 +64,7 @@ export default function SheetPage() {
   // Grid state
   const [cellMap, setCellMap] = useState<CellMap>(new Map());
   const [formatMap, setFormatMap] = useState<FormatMap>(new Map());
+  const [colWidths, setColWidths] = useState<Record<number, number>>({});
   const [selectedRow, setSelectedRow] = useState(0);
   const [selectedCol, setSelectedCol] = useState(0);
   const [editingCell, setEditingCell] = useState<{
@@ -44,8 +74,22 @@ export default function SheetPage() {
   const [editValue, setEditValue] = useState("");
   const [syncState, setSyncState] = useState<SyncState>("saved");
   const [loading, setLoading] = useState(true);
-  const [presence, setPresence] = useState<Presence[]>([]);
+  const [remotePresence, setRemotePresence] = useState<Presence[]>([]);
   const [docTitle, setDocTitle] = useState("Spreadsheet");
+
+  // Build merged presence: always show the current user first, then others
+  const presence = useMemo<Presence[]>(() => {
+    const selfPresence: Presence = {
+      userName: user?.name ?? "You",
+      color: user?.color ?? getRandomColor(),
+      lastActive: BigInt(Date.now()) * BigInt(1_000_000),
+    };
+    // Deduplicate: exclude remotes with the same name as self
+    const others = remotePresence.filter(
+      (p) => p.userName !== selfPresence.userName,
+    );
+    return [selfPresence, ...others];
+  }, [user, remotePresence]);
 
   const sessionIdRef = useRef<string | null>(null);
   const writingRef = useRef(false);
@@ -103,7 +147,7 @@ export default function SheetPage() {
     if (!actor || !user) return;
     try {
       const color = user.color || getRandomColor();
-      const sessionId = await actor.joinDocument(docId, color);
+      const sessionId = await actor.joinDocument(docId, color, user.name);
       sessionIdRef.current = sessionId;
     } catch {
       // silent
@@ -135,7 +179,7 @@ export default function SheetPage() {
     if (!actor) return;
     try {
       const data = await actor.getPresence(docId);
-      setPresence(data);
+      setRemotePresence(data);
     } catch {
       // silent
     }
@@ -150,8 +194,8 @@ export default function SheetPage() {
 
     // Poll cells every 3s
     const cellInterval = setInterval(loadCells, 3000);
-    // Poll presence every 5s
-    const presenceInterval = setInterval(loadPresence, 5000);
+    // Poll presence every 3s
+    const presenceInterval = setInterval(loadPresence, 3000);
     // Heartbeat every 15s
     const heartbeatInterval = setInterval(sendHeartbeat, 15000);
 
@@ -183,6 +227,8 @@ export default function SheetPage() {
       setSyncState("saving");
       try {
         await actor.updateCell(docId, BigInt(row), BigInt(col), value, formula);
+        // Record local modification time for dashboard "last modified" display
+        touchDocumentTimestamp(docId);
         setSyncState("saved");
       } catch {
         setSyncState("offline");
@@ -209,9 +255,10 @@ export default function SheetPage() {
   const applyCellValue = useCallback(
     (row: number, col: number, rawValue: string) => {
       const key = `${row},${col}`;
-      const isFormula = rawValue.startsWith("=");
-      const formula = isFormula ? rawValue : "";
-      const value = isFormula ? "" : rawValue;
+      const normalizedValue = normalizeInput(rawValue, row);
+      const isFormula = normalizedValue.startsWith("=");
+      const formula = isFormula ? normalizedValue : "";
+      const value = isFormula ? "" : normalizedValue;
 
       // Optimistic update
       setCellMap((prev) => {
@@ -329,6 +376,11 @@ export default function SheetPage() {
     },
     [selectedRow, selectedCol],
   );
+
+  // Column resize
+  const handleColResize = useCallback((col: number, width: number) => {
+    setColWidths((prev) => ({ ...prev, [col]: width }));
+  }, []);
 
   // CSV export
   const getCellDisplayValue = useCallback(
@@ -486,6 +538,8 @@ export default function SheetPage() {
       <Grid
         cellMap={cellMap}
         formatMap={formatMap}
+        colWidths={colWidths}
+        onColResize={handleColResize}
         selectedRow={selectedRow}
         selectedCol={selectedCol}
         editingCell={editingCell}

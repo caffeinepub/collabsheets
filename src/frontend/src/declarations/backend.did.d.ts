@@ -37,6 +37,7 @@ export type UserRole = { 'admin' : null } |
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'checkPermission' : ActorMethod<[], undefined>,
   'createDocument' : ActorMethod<[string], string>,
   'deleteDocument' : ActorMethod<[string], undefined>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
@@ -46,7 +47,7 @@ export interface _SERVICE {
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'heartbeat' : ActorMethod<[string, string], undefined>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
-  'joinDocument' : ActorMethod<[string, string], string>,
+  'joinDocument' : ActorMethod<[string, string, string], string>,
   'leaveDocument' : ActorMethod<[string, string], undefined>,
   'listDocuments' : ActorMethod<[], Array<Document>>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,

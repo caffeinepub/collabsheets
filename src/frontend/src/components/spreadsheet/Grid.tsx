@@ -5,6 +5,9 @@ import type { CellFormat } from "./FormattingToolbar";
 
 const ROWS = 100;
 const COLS = 26;
+const DEFAULT_COL_WIDTH = 100;
+const MIN_COL_WIDTH = 40;
+const ROW_HEADER_WIDTH = 48;
 
 export interface CellData {
   value: string;
@@ -19,6 +22,8 @@ export type FormatMap = Map<string, CellFormat>;
 interface GridProps {
   cellMap: CellMap;
   formatMap: FormatMap;
+  colWidths: Record<number, number>;
+  onColResize: (col: number, width: number) => void;
   selectedRow: number;
   selectedCol: number;
   editingCell: { row: number; col: number } | null;
@@ -36,6 +41,8 @@ const DEFAULT_FORMAT: CellFormat = { bold: false, italic: false, color: "" };
 export const Grid = memo(function Grid({
   cellMap,
   formatMap,
+  colWidths,
+  onColResize,
   selectedRow,
   selectedCol,
   editingCell,
@@ -90,6 +97,36 @@ export const Grid = memo(function Grid({
 
   const rows = useMemo(() => Array.from({ length: ROWS }, (_, i) => i), []);
 
+  // Column resize drag handler
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>, colIndex: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const startX = e.clientX;
+      const startWidth = colWidths[colIndex] ?? DEFAULT_COL_WIDTH;
+
+      const onMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const newWidth = Math.max(MIN_COL_WIDTH, startWidth + delta);
+        onColResize(colIndex, newWidth);
+      };
+
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [colWidths, onColResize],
+  );
+
   return (
     <div
       ref={containerRef}
@@ -99,32 +136,94 @@ export const Grid = memo(function Grid({
       }}
     >
       <table className="spreadsheet-grid" aria-label="Spreadsheet grid">
+        <colgroup>
+          <col
+            style={{
+              width: `${ROW_HEADER_WIDTH}px`,
+              minWidth: `${ROW_HEADER_WIDTH}px`,
+            }}
+          />
+          {columnHeaders.map((letter, i) => {
+            const w = colWidths[i] ?? DEFAULT_COL_WIDTH;
+            return (
+              <col
+                key={letter}
+                style={{ width: `${w}px`, minWidth: `${w}px` }}
+              />
+            );
+          })}
+        </colgroup>
         <thead>
           <tr>
             {/* Corner header */}
             <th
               className="corner-header text-center"
               style={{
-                width: "48px",
-                minWidth: "48px",
-                maxWidth: "48px",
+                width: `${ROW_HEADER_WIDTH}px`,
+                minWidth: `${ROW_HEADER_WIDTH}px`,
+                maxWidth: `${ROW_HEADER_WIDTH}px`,
                 height: "24px",
               }}
             />
-            {columnHeaders.map((col) => (
-              <th
-                key={col}
-                style={{
-                  width: "100px",
-                  minWidth: "100px",
-                  maxWidth: "100px",
-                  height: "24px",
-                  textAlign: "center",
-                }}
-              >
-                {col}
-              </th>
-            ))}
+            {columnHeaders.map((col, colIndex) => {
+              const w = colWidths[colIndex] ?? DEFAULT_COL_WIDTH;
+              return (
+                <th
+                  key={col}
+                  style={{
+                    width: `${w}px`,
+                    minWidth: `${w}px`,
+                    height: "24px",
+                    textAlign: "center",
+                    position: "sticky",
+                    top: 0,
+                    zIndex: 2,
+                    overflow: "visible",
+                  }}
+                >
+                  <div
+                    className="col-header-inner"
+                    style={{
+                      position: "relative",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      height: "100%",
+                    }}
+                  >
+                    {col}
+                    {/* Resize handle */}
+                    <div
+                      className="col-resize-handle"
+                      onMouseDown={(e) => handleResizeMouseDown(e, colIndex)}
+                      style={{
+                        position: "absolute",
+                        right: 0,
+                        top: 0,
+                        width: "6px",
+                        height: "100%",
+                        cursor: "col-resize",
+                        zIndex: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: "2px",
+                          height: "60%",
+                          background: "oklch(0.40 0.012 250)",
+                          borderRadius: "1px",
+                          transition: "background 0.15s",
+                        }}
+                        className="resize-handle-bar"
+                      />
+                    </div>
+                  </div>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -134,9 +233,9 @@ export const Grid = memo(function Grid({
               <td
                 className="row-number"
                 style={{
-                  width: "48px",
-                  minWidth: "48px",
-                  maxWidth: "48px",
+                  width: `${ROW_HEADER_WIDTH}px`,
+                  minWidth: `${ROW_HEADER_WIDTH}px`,
+                  maxWidth: `${ROW_HEADER_WIDTH}px`,
                   height: "24px",
                 }}
               >
@@ -152,11 +251,13 @@ export const Grid = memo(function Grid({
                   editingCell.col === c;
                 const displayValue = displayValues.get(key) ?? "";
                 const fmt = formatMap.get(key) ?? DEFAULT_FORMAT;
+                const cellWidth = colWidths[c] ?? DEFAULT_COL_WIDTH;
                 return (
                   <Cell
                     key={key}
                     row={r}
                     col={c}
+                    width={cellWidth}
                     displayValue={displayValue}
                     isSelected={isSelected}
                     isEditing={isEditing}

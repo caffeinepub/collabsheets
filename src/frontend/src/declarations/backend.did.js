@@ -41,6 +41,7 @@ export const Document = IDL.Record({
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'checkPermission' : IDL.Func([], [], []),
   'createDocument' : IDL.Func([IDL.Text], [IDL.Text], []),
   'deleteDocument' : IDL.Func([IDL.Text], [], []),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
@@ -54,7 +55,7 @@ export const idlService = IDL.Service({
     ),
   'heartbeat' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-  'joinDocument' : IDL.Func([IDL.Text, IDL.Text], [IDL.Text], []),
+  'joinDocument' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Text], []),
   'leaveDocument' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'listDocuments' : IDL.Func([], [IDL.Vec(Document)], ['query']),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
@@ -98,6 +99,7 @@ export const idlFactory = ({ IDL }) => {
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'checkPermission' : IDL.Func([], [], []),
     'createDocument' : IDL.Func([IDL.Text], [IDL.Text], []),
     'deleteDocument' : IDL.Func([IDL.Text], [], []),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
@@ -111,7 +113,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'heartbeat' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-    'joinDocument' : IDL.Func([IDL.Text, IDL.Text], [IDL.Text], []),
+    'joinDocument' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [IDL.Text], []),
     'leaveDocument' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'listDocuments' : IDL.Func([], [IDL.Vec(Document)], ['query']),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),

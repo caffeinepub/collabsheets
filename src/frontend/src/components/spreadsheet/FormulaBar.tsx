@@ -57,12 +57,9 @@ export const FormulaBar = memo(function FormulaBar({
         {address}
       </div>
 
-      {/* Formula equals sign */}
-      <div
-        className="px-2 text-xs font-mono shrink-0"
-        style={{ color: "oklch(0.56 0.01 250)" }}
-      >
-        fx
+      {/* Formula fx indicator */}
+      <div className="formula-bar-fx" aria-hidden="true">
+        <em>fx</em>
       </div>
 
       {/* Formula input */}
@@ -75,7 +72,7 @@ export const FormulaBar = memo(function FormulaBar({
         onKeyDown={handleKeyDown}
         spellCheck={false}
         autoComplete="off"
-        placeholder="Enter value or formula..."
+        placeholder="Value or formula (e.g. =A1+B1, =SUM(A1:A5))"
       />
     </div>
   );

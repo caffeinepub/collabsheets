@@ -1,17 +1,21 @@
 import Map "mo:core/Map";
-import List "mo:core/List";
+import Nat "mo:core/Nat";
 import Array "mo:core/Array";
-import Text "mo:core/Text";
+import Int "mo:core/Int";
+import List "mo:core/List";
 import Iter "mo:core/Iter";
 import Order "mo:core/Order";
+import Text "mo:core/Text";
+import Runtime "mo:core/Runtime";
 import Time "mo:core/Time";
 import Principal "mo:core/Principal";
-import Runtime "mo:core/Runtime";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
 actor {
-  type Document = {
+  type CellKey = Text;
+
+  public type Document = {
     id : Text;
     title : Text;
     author : Principal;
@@ -19,13 +23,7 @@ actor {
     lastModified : Int;
   };
 
-  module Document {
-    public func compare(doc1 : Document, doc2 : Document) : Order.Order {
-      Text.compare(doc1.title, doc2.title);
-    };
-  };
-
-  type Cell = {
+  public type Cell = {
     row : Nat;
     col : Nat;
     value : Text;
@@ -40,54 +38,90 @@ actor {
     lastActive : Int;
   };
 
-  type UserProfile = {
+  public type UserProfile = {
     name : Text;
     color : Text;
+  };
+
+  public type Guest = {
+    #guest;
+  };
+
+  public type SpreadsheetError = {
+    #missingDocument;
   };
 
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
   let documents = Map.empty<Text, Document>();
-  let cells = Map.empty<Text, List.List<Cell>>();
-  let presences = Map.empty<Text, List.List<Presence>>();
+  let cells = Map.empty<Text, Map.Map<CellKey, Cell>>();
+  let presences = Map.empty<Text, Map.Map<Text, Presence>>();
   let userProfiles = Map.empty<Principal, UserProfile>();
 
-  public shared ({ caller }) func createDocument(title : Text) : async Text {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create documents");
+  func generateDocId(title : Text) : Text {
+    title.concat(Time.now().toText());
+  };
+
+  func getUserNameInternal(p : Principal) : Text {
+    switch (userProfiles.get(p)) {
+      case (null) { "Anonymous" };
+      case (?profile) { profile.name };
     };
-    let docId = title.concat(Time.now().toText());
+  };
+
+  func filterActivePresence(presenceMap : Map.Map<Text, Presence>) : Iter.Iter<Presence> {
+    let currentTime = Time.now();
+    let filtered = presenceMap.filter(
+      func(_id, presence) {
+        currentTime - presence.lastActive <= 60_000_000_000;
+      }
+    );
+    filtered.values();
+  };
+
+  func compareDocumentsByLastModified(doc1 : Document, doc2 : Document) : Order.Order {
+    Int.compare(doc2.lastModified, doc1.lastModified);
+  };
+
+  public shared ({ caller }) func createDocument(title : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can create documents");
+    };
+
+    let docId = generateDocId(title);
     let document : Document = {
       id = docId;
       title;
       author = caller;
-      authorName = getUserName(caller);
+      authorName = getUserNameInternal(caller);
       lastModified = Time.now();
     };
+
     documents.add(docId, document);
-    cells.add(docId, List.empty<Cell>());
-    presences.add(docId, List.empty<Presence>());
+    cells.add(docId, Map.empty<CellKey, Cell>());
+    presences.add(docId, Map.empty<Text, Presence>());
     docId;
   };
 
   public query ({ caller }) func listDocuments() : async [Document] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can list documents");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can list documents");
     };
-    documents.values().toArray().sort();
+
+    let docsArray = documents.values().toArray();
+    docsArray.sort(compareDocumentsByLastModified);
   };
 
   public shared ({ caller }) func deleteDocument(docId : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete documents");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can delete documents");
     };
-    switch (documents.get(docId)) {
+
+    let doc = documents.get(docId);
+    switch (doc) {
       case (null) { Runtime.trap("Document not found") };
-      case (?doc) {
-        if (doc.author != caller and not AccessControl.isAdmin(accessControlState, caller)) {
-          Runtime.trap("Unauthorized: Only document author or admin can delete this document");
-        };
+      case (_) {
         documents.remove(docId);
         cells.remove(docId);
         presences.remove(docId);
@@ -96,117 +130,139 @@ actor {
   };
 
   public shared ({ caller }) func updateCell(docId : Text, row : Nat, col : Nat, value : Text, formula : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update cells");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can update cells");
     };
-    let newCell : Cell = {
-      row;
-      col;
-      value;
-      formula;
-      editedBy = getUserName(caller);
-      timestamp = Time.now();
-    };
+
     switch (cells.get(docId)) {
       case (null) { Runtime.trap("Document not found") };
-      case (?cellList) {
-        cellList.add(newCell);
-        cells.add(docId, cellList);
+      case (?cellMap) {
+        let cellKey = row.toText().concat(",").concat(col.toText());
+        let newCell : Cell = {
+          row;
+          col;
+          value;
+          formula;
+          editedBy = getUserNameInternal(caller);
+          timestamp = Time.now();
+        };
+        cellMap.add(cellKey, newCell);
+        cells.add(docId, cellMap);
+
+        switch (documents.get(docId)) {
+          case (null) { Runtime.trap("Document not found") };
+          case (?doc) {
+            let updatedDoc = { doc with lastModified = Time.now() };
+            documents.add(docId, updatedDoc);
+          };
+        };
       };
     };
   };
 
   public query ({ caller }) func getCells(docId : Text) : async [Cell] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can get cells");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can get cells");
     };
+
     switch (cells.get(docId)) {
       case (null) { [] };
-      case (?cellList) { cellList.toArray() };
+      case (?cellMap) { cellMap.values().toArray() };
     };
   };
 
-  public shared ({ caller }) func joinDocument(docId : Text, color : Text) : async Text {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can join documents");
+  public shared ({ caller }) func joinDocument(docId : Text, color : Text, userName : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can join a document");
     };
+
+    let sessionId = caller.toText().concat("-").concat(Time.now().toText());
     let presence : Presence = {
-      userName = getUserName(caller);
+      userName = if (userName == "") { getUserNameInternal(caller) } else { userName };
       color;
       lastActive = Time.now();
     };
-    let newPresences = List.fromArray<Presence>([presence]);
-    presences.add(docId, newPresences);
-    getUserName(caller);
+    switch (presences.get(docId)) {
+      case (null) { Runtime.trap("Document not found") };
+      case (?presenceMap) {
+        presenceMap.add(sessionId, presence);
+        presences.add(docId, presenceMap);
+      };
+    };
+    sessionId;
   };
 
   public shared ({ caller }) func leaveDocument(docId : Text, sessionId : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can leave documents");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can leave a document");
     };
+
     switch (presences.get(docId)) {
       case (null) { Runtime.trap("Document not found") };
-      case (?presenceList) {
-        let filtered = presenceList.filter(func(p) { p.userName != sessionId });
-        presences.add(docId, filtered);
+      case (?presenceMap) {
+        presenceMap.remove(sessionId);
+        presences.add(docId, presenceMap);
       };
     };
   };
 
   public shared ({ caller }) func heartbeat(docId : Text, sessionId : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can send heartbeat");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can use heartbeat");
     };
+
     switch (presences.get(docId)) {
       case (null) { Runtime.trap("Document not found") };
-      case (?presenceList) {
-        let updated = presenceList.map<Presence, Presence>(
-          func(p) { if (p.userName == sessionId) { { p with lastActive = Time.now() } } else { p } }
-        );
-        presences.add(docId, updated);
+      case (?presenceMap) {
+        switch (presenceMap.get(sessionId)) {
+          case (null) {
+            Runtime.trap("Presence not found");
+          };
+          case (?presence) {
+            let updatedPresence = { presence with lastActive = Time.now() };
+            presenceMap.add(sessionId, updatedPresence);
+            presences.add(docId, presenceMap);
+          };
+        };
       };
     };
   };
 
   public query ({ caller }) func getPresence(docId : Text) : async [Presence] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can get presence");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can get presence");
     };
+
     switch (presences.get(docId)) {
       case (null) { [] };
-      case (?presenceList) {
-        let currentTime = Time.now();
-        let active = presenceList.filter(func(p) { currentTime - p.lastActive <= 60_000_000_000 });
-        active.toArray();
-      };
+      case (?presenceMap) { filterActivePresence(presenceMap).toArray() };
     };
   };
 
+  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can save profiles");
+    };
+    userProfiles.add(caller, profile);
+  };
+
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can get profiles");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can get user profiles");
     };
     userProfiles.get(caller);
   };
 
   public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can get user profiles");
     };
     userProfiles.get(user);
   };
 
-  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
-    userProfiles.add(caller, profile);
-  };
-
-  func getUserName(caller : Principal) : Text {
-    switch (userProfiles.get(caller)) {
-      case (null) { "Anonymous" };
-      case (?profile) { profile.name };
+  public shared ({ caller }) func checkPermission() : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #guest))) {
+      Runtime.trap("Unauthorized: Only guests can access this operation");
     };
   };
 };

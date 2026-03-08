@@ -38,6 +38,7 @@ export enum UserRole {
 }
 export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    checkPermission(): Promise<void>;
     createDocument(title: string): Promise<string>;
     deleteDocument(docId: string): Promise<void>;
     getCallerUserProfile(): Promise<UserProfile | null>;
@@ -47,7 +48,7 @@ export interface backendInterface {
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     heartbeat(docId: string, sessionId: string): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
-    joinDocument(docId: string, color: string): Promise<string>;
+    joinDocument(docId: string, color: string, userName: string): Promise<string>;
     leaveDocument(docId: string, sessionId: string): Promise<void>;
     listDocuments(): Promise<Array<Document>>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
